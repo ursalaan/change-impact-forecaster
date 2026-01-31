@@ -3,10 +3,9 @@
 [![CI](https://github.com/ursalaan/change-impact-forecaster/actions/workflows/ci.yml/badge.svg)](https://github.com/ursalaan/change-impact-forecaster/actions/workflows/ci.yml)
 [![Release (CD)](https://github.com/ursalaan/change-impact-forecaster/actions/workflows/release.yml/badge.svg)](https://github.com/ursalaan/change-impact-forecaster/actions/workflows/release.yml)
 
-
 Change Impact Forecaster is a backend service that evaluates the **risk and operational impact of production changes before they are deployed**.
 
-It is built as a **change-management and SRE decision-support tool**, not an outage prediction system. The focus is on **explainability and auditability**: every score is derived from explicit rules, and every assessment clearly shows *why* a change was classified the way it was.
+It is designed as a **change-management and SRE decision-support tool**, not an outage prediction system. The focus is on **explainability and auditability**: every score is derived from explicit rules, and every assessment clearly shows *why* a change was classified the way it was.
 
 The goal is simple: surface risk early so teams can make safer deployment decisions before something breaks.
 
@@ -35,14 +34,14 @@ The service exposes a single endpoint:
 POST /assess
 ```
 
-It accepts structured change metadata (environment, change type, services touched, timing, rollback readiness, monitoring strength) and returns:
+It accepts structured change metadata (environment, change type, services touched, timing, rollback readiness, and monitoring strength) and returns:
 
 - a **risk score (0–100)**
 - a **risk level** (low / medium / high)
 - a **dependency-aware blast radius**
-- an **explainable breakdown** of the decision
+- a fully **explainable assessment**
 
-The system supports human judgement rather than trying to replace it.
+The system supports human judgement rather than attempting to replace it.
 
 ---
 
@@ -112,7 +111,7 @@ Signals include:
 - environment (production vs non-production)
 - change type (configuration, deployment, infrastructure, database, access)
 - deployment timing (business hours vs out-of-hours / weekend)
-- rollback availability and test status
+- rollback quality
 - monitoring strength
 - number of services touched
 - downstream dependencies
@@ -140,6 +139,19 @@ Because the graph is data-driven, relationships can be updated without changing 
 
 ---
 
+## Dependency graph
+
+```mermaid
+graph TD
+  gateway --> api
+  api --> auth
+  api --> database
+  auth --> database
+  auth --> cache
+```
+
+---
+
 ## Project structure
 
 ```
@@ -162,16 +174,25 @@ Because the graph is data-driven, relationships can be updated without changing 
 │   └── test_assess_contract.py
 ├── .gitignore
 ├── Dockerfile
+├── Makefile
 ├── pyproject.toml
-├── requirements.txt
-└── README.md
+├── README.md
+└── requirements.txt
 ```
 
 ---
 
 ## Running the service
 
-### Run locally with Python
+### Using Make (recommended)
+
+```bash
+make run     # start API locally
+make test    # run tests
+make docker  # build and run container
+```
+
+### Run locally
 
 ```bash
 uvicorn cif.main:app --reload
@@ -189,7 +210,7 @@ http://127.0.0.1:8000/docs
 docker run -p 8000:8000 ghcr.io/ursalalan/change-impact-forecaster:latest
 ```
 
-### Running tests
+### Run tests
 
 ```bash
 pytest
@@ -199,7 +220,7 @@ pytest
 
 ## CI/CD
 
-Continuous Integration runs on every push and pull request. Dependencies are installed and the full test suite is executed automatically.
+Continuous Integration runs on every push and pull request. Dependencies are installed and the test suite is executed automatically.
 
 Continuous Deployment runs on version tags (for example `v0.1.1`). A Docker image is built and published to GitHub Container Registry with both a versioned tag and `latest`.
 
