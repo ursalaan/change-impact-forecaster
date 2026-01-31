@@ -5,43 +5,45 @@
 
 Change Impact Forecaster is a backend service that evaluates the **risk and operational impact of production changes before they are deployed**.
 
-It is designed as a **change-management and SRE decision-support tool**, not an outage prediction system. The focus is on **explainability and auditability**: every score is derived from explicit rules, and every assessment clearly shows *why* a change was classified the way it was.
+It acts as a **change-management and SRE decision-support tool**, not an outage prediction system. Scoring is deterministic and fully explainable — every result shows exactly *why* a change is considered risky.
 
-The goal is simple: surface risk early so teams can make safer deployment decisions before something breaks.
+The goal is simple: make risk visible early so teams can ship safely.
 
 ---
 
 ## Why this exists
 
-Most production incidents are not mysterious failures. They usually come from **predictable, high-risk changes**, such as:
+Most incidents aren’t caused by mysterious failures. They come from **predictable, high-risk changes**, such as:
 
-- deployments made out of hours or on weekends  
+- deployments out of hours or on weekends  
 - weak or missing rollback plans  
 - unclear service dependencies  
-- large blast-radius changes deployed in a single step  
+- large blast-radius releases shipped all at once  
 
-These risks are obvious in hindsight but rarely evaluated consistently beforehand.
+These risks are usually obvious in hindsight, but rarely assessed consistently beforehand.
 
-This project provides a **structured, repeatable way to reason about change risk**, helping teams slow down, challenge assumptions, and reduce avoidable incidents before deployment.
+This project provides a **structured, repeatable way to evaluate change risk** before deployment.
 
 ---
 
 ## What the service does
 
-The service exposes a single endpoint:
+The API exposes a single endpoint:
 
 ```
 POST /assess
 ```
 
-It accepts structured change metadata (environment, change type, services touched, timing, rollback readiness, and monitoring strength) and returns:
+Given structured change metadata, the service returns:
 
-- a **risk score (0–100)**
-- a **risk level** (low / medium / high)
-- a **dependency-aware blast radius**
-- a fully **explainable assessment**
+- risk score (0–100)
+- risk level (low / medium / high)
+- dependency-aware blast radius
+- contributing risk factors and weights
+- mitigations and assumptions
+- confidence level
 
-The system supports human judgement rather than attempting to replace it.
+All decisions are **rule-based and auditable**, not black-box predictions.
 
 ---
 
@@ -55,12 +57,9 @@ The system supports human judgement rather than attempting to replace it.
   "title": "Deploy API service",
   "environment": "prod",
   "change_type": "deployment",
-  "window_start": "2026-01-31T19:30:00Z",
   "services_touched": ["api"],
-  "deployment_method": "pipeline",
   "rollback_quality": "partial",
-  "monitoring_plan": "basic",
-  "notes": "Standard deployment with config refresh"
+  "monitoring_plan": "basic"
 }
 ```
 
@@ -68,35 +67,13 @@ The system supports human judgement rather than attempting to replace it.
 
 ```json
 {
-  "change_id": "CHG-1024",
   "risk_score": 55,
   "risk_level": "medium",
   "confidence": "medium",
   "blast_radius": {
     "direct": ["api"],
     "indirect": ["gateway"]
-  },
-  "factors": [
-    { "code": "ENV_PROD", "message": "Production change", "weight": 30 },
-    { "code": "TYPE", "message": "Change type: deployment", "weight": 15 },
-    { "code": "BLAST_INDIRECT", "message": "Indirectly impacts 1 additional service(s)", "weight": 10 }
-  ],
-  "mitigations": [
-    "Make sure rollback steps are written and tested before starting.",
-    "Add extra monitoring (dashboards/alerts) for the change window."
-  ],
-  "assumptions": [
-    "Service dependencies are loaded from data/dependencies.yaml.",
-    "Blast radius is estimated using direct + downstream dependencies."
-  ],
-  "missing_info": [
-    "monitoring plan is not strong"
-  ],
-  "confidence_reasons": [
-    "change window specified",
-    "limited indirect service impact",
-    "rollback plan partially defined"
-  ]
+  }
 }
 ```
 
@@ -104,42 +81,39 @@ The system supports human judgement rather than attempting to replace it.
 
 ## How risk is assessed
 
-Risk scoring is **rule-based and deterministic by design**.
+Scoring is **deterministic and explainable**.
 
 Signals include:
 
 - environment (production vs non-production)
-- change type (configuration, deployment, infrastructure, database, access)
-- deployment timing (business hours vs out-of-hours / weekend)
+- change type
+- deployment timing
 - rollback quality
 - monitoring strength
 - number of services touched
 - downstream dependencies
 
-Every contributing factor is returned in the API response, making results **fully transparent and auditable**.
+Each signal contributes a clear weight to the final score.  
+Nothing is hidden or probabilistic.
 
 ---
 
 ## Dependency-aware blast radius
 
-Service relationships are defined in:
+Dependencies are defined in:
 
 ```
 data/dependencies.yaml
 ```
 
-From this dependency graph, the service calculates:
+From this graph, the service calculates:
 
-- directly affected services  
-- indirect (downstream) services  
+- directly affected services
+- indirect downstream services
 
-If a referenced service is not present in the graph, the request is rejected early to avoid silently underestimating impact.
+Unknown services are rejected early to avoid underestimating impact.
 
-Because the graph is data-driven, relationships can be updated without changing application code.
-
----
-
-## Dependency graph
+### Dependency graph
 
 ```mermaid
 graph TD
@@ -149,6 +123,21 @@ graph TD
   auth --> database
   auth --> cache
 ```
+
+---
+
+## Features
+
+- FastAPI backend
+- deterministic rule engine
+- dependency graph blast-radius analysis
+- structured logging
+- request timing middleware
+- strict input validation
+- CLI for local assessments
+- Docker image builds
+- CI on every push
+- CD on version tags
 
 ---
 
@@ -167,6 +156,7 @@ graph TD
 │   └── cif/
 │       ├── __init__.py
 │       ├── api.py
+│       ├── cli.py
 │       ├── engine.py
 │       ├── main.py
 │       └── models.py
@@ -187,30 +177,33 @@ graph TD
 ### Using Make (recommended)
 
 ```bash
-make run     # start API locally
-make test    # run tests
-make docker  # build and run container
+make run                      # start API locally
+make test                     # run tests
+make docker                   # build and run container
+make assess FILE=change.json  # run assessment via CLI
 ```
 
-### Run locally
+### Manual commands
+
+Run locally:
 
 ```bash
 uvicorn cif.main:app --reload
 ```
 
-### API documentation (Swagger UI)
+Swagger docs:
 
 ```
 http://127.0.0.1:8000/docs
 ```
 
-### Run using Docker
+Run Docker:
 
 ```bash
 docker run -p 8000:8000 ghcr.io/ursalalan/change-impact-forecaster:latest
 ```
 
-### Run tests
+Run tests:
 
 ```bash
 pytest
@@ -218,29 +211,41 @@ pytest
 
 ---
 
+## CLI usage
+
+You can assess a change without running the API:
+
+```bash
+python -m cif.cli assess change.json
+```
+
+Useful for scripting or quick checks.
+
+---
+
 ## CI/CD
 
-Continuous Integration runs on every push and pull request. Dependencies are installed and the test suite is executed automatically.
+Continuous Integration runs on every push and pull request and executes the test suite automatically.
 
-Continuous Deployment runs on version tags (for example `v0.1.1`). A Docker image is built and published to GitHub Container Registry with both a versioned tag and `latest`.
+Continuous Deployment runs on version tags and builds a Docker image published to GitHub Container Registry.
 
 Each release produces a reproducible, deployable artefact.
 
 ---
 
-## Design Notes
+## Design principles
 
-- Rule-based scoring prioritises explainability over predictive accuracy  
-- Risk weights are heuristic and intended to guide discussion, not guarantee outcomes  
-- The dependency graph models logical service relationships rather than infrastructure wiring  
-- The system is lightweight, portable, and organisation-agnostic  
+- deterministic over probabilistic  
+- explainable over opaque  
+- small and portable over over-engineered  
+- configuration-driven dependency modelling  
 
 ---
 
 ## Status
 
-This project represents a stable baseline suitable for:
+Stable and ready for:
 
-- portfolio demonstration  
-- technical interviews  
-- extension with historical data or ML-assisted scoring  
+- portfolio demonstration
+- technical interviews
+- extension with historical data or ML-assisted scoring
